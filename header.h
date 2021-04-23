@@ -19,6 +19,7 @@
 extern const int ERR_CODE;
 extern const int MAXTOKEN;
  
+ struct sigaction sig;
 
 char *chik_cmd[CMD_COUNT];
 extern int (*chik_func[CMD_COUNT])(char **);
@@ -32,3 +33,5 @@ int chik_cd(char** commands_token);
 int chik_help(char** commands_token);
 int chik_exit(char** commands_token);
 int run_program(char** commands_token);
+void kill_parent(int signum);
+void kill_child(int signum);

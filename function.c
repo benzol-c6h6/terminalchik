@@ -107,13 +107,20 @@ int run_program(char** commands_token)
     case 0:     //код потомка
         if (execvp(commands_token[0], commands_token) == -1)
         {
-            perror("execvp:");
+            perror("execvp");
         }
     default:    //код родительского процееса
+        sig.sa_handler = &kill_child;
+        sigaction(SIGINT, &sig, NULL);
+
         wpid = waitpid(pid, NULL, 0);
-        if(errno != 0)
+
+        sig.sa_handler = &kill_parent;
+        sigaction(SIGINT, &sig, NULL);
+        
+        if(errno != 0 && errno != EINTR)
         {
-            perror("waitpid:");
+            perror("waitpid");
         }
     }
     return 0;
@@ -137,3 +144,15 @@ int chik_exit(char** command_tokens)
     exit(0);
     return 0;
 }
+
+void kill_child(int signum)
+{
+    printf("\nПринудительное завершение процесса потомка\n");
+    sig.sa_handler = &kill_parent;
+} 
+
+void kill_parent(int signum)
+{
+    printf("\nПринудительное завершение терминала\n");
+    chik_exit(NULL);
+} 
