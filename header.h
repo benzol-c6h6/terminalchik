@@ -15,23 +15,29 @@
 #define CYAN "\033[36m"
 #define LINE "============================================\n"
 #define MAX_LEN_PATH 256
-
-extern const int ERR_CODE;
-extern const int MAXTOKEN;
+#define ERR_CODE -1
+#define MAXTOKEN 16
  
- struct sigaction sig;
+struct sigaction sig;
+struct process 
+{
+    pid_t pid;
+    char **tokens;
+    int count_tokens;
+    int is_background;
+};
 
 char *chik_cmd[CMD_COUNT];
-extern int (*chik_func[CMD_COUNT])(char **);
+extern void (*chik_func[CMD_COUNT])(struct process*);
 
-int shell_chik(); 
+void shell_chik(); 
 char* read_chik();    //чтение
-char** parsing_chik(char* command, int *count_token); //парсинг  
-int exec_chik(char** command_tokens);    //исполнение
+void parsing_chik(char* string_command, struct process* command);
+void exec_chik(struct process* command);    //исполнение
 
-int chik_cd(char** commands_token);
-int chik_help(char** commands_token);
-int chik_exit(char** commands_token);
-int run_program(char** commands_token);
+void chik_cd(struct process* command);
+void chik_help(struct process* command);
+void chik_exit(struct process* command);
+void run_program(struct process* command);
 void kill_parent(int signum);
 void kill_child(int signum);

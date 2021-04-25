@@ -1,42 +1,43 @@
 #include "header.h"
 
-const int ERR_CODE = -1;
-const int MAXTOKEN = 16;
-char *chik_cmd[CMD_COUNT] = {
+char *chik_cmd[CMD_COUNT] = 
+{
     "cd",
     "help",
     "exit"
 };
-int (*chik_func[CMD_COUNT])(char **) = {
+
+void (*chik_func[CMD_COUNT])(struct process*) = 
+{
     chik_cd,
     chik_help,
     chik_exit
 };
 
-int shell_chik()
+void shell_chik()
 {
-    char *command;
-    char **command_tokens;
-    int count_token = 0;
+    char *string_command;
+    struct process command;
+  
     char path[MAX_LEN_PATH];
     //чтение
     //проверка пути
     getcwd(path, MAX_LEN_PATH);
     printf(BRIGHT YELLOW "\nchik:" CYAN " %s " DEFAULT "> ", path);
-    command = read_chik();
+    string_command = read_chik();
 
     //парсинг
-    command_tokens = parsing_chik(command, &count_token);
-    if (command_tokens == NULL)
+    parsing_chik(string_command, &command);
+    if (command.tokens == NULL)
     {
-        return ERR_CODE;
+        return;
     }
 
     //исполнение
-    exec_chik(command_tokens);
-    free(command);
-    free(command_tokens);
-    return 0;
+    exec_chik(&command);
+    free(string_command);
+    free(command.tokens);
+    return;
 }
 
 char* read_chik()  
@@ -51,104 +52,132 @@ char* read_chik()
         return NULL;
     }
     read_cmd[size_command - 1] = '\0';
-    //printf("size_command = %li, bufsize = %lu, strlen(buf) = %lu, command = <%s>\n", size_command, bufsize, strlen(command), command);
+    //printf("size_command = %li, bufsize = %lu, strlen(buf) = %lu, command = <%s>\n", size_command, bufsize, strlen(read_cmd), read_cmd);
     return read_cmd;
 }
 
-char** parsing_chik(char* command, int *count_token)
+//TODO: утечка на echo с 2 словами и больше
+void parsing_chik(char* string_command, struct process* command)
 {
-    char *temp = strtok(command, " \0");
+    char *tr;
+    char *temp = strtok_r(string_command, " \0", &tr);
+
+
     if (temp == NULL)
+        return;
+    
+    command->tokens = malloc(sizeof(char)*(MAXTOKEN));
+    if (command->tokens == NULL)
     {
-        return NULL;
+        perror("malloc");
+        return;
     }
-    char **tokens = malloc(sizeof(char)*(MAXTOKEN));
-    if (tokens == NULL)
-    {
-        perror("err");
-        return NULL;
-    }
-    *count_token = 0;
-    //tokens[*count_token] = temp;
+
+    command->count_tokens = 0;
     while (temp != NULL)
     {
-        tokens[*count_token] = temp;
-        (*count_token)++;
-        temp = strtok(NULL, " \0");
+        command->tokens[command->count_tokens] = temp;
+        //printf("token[%i] = <%s>", command->count_tokens, temp);
+        command->count_tokens++;
+        temp = strtok_r(NULL, " \0", &tr);
     }
-    tokens[*count_token] = NULL;
-    return tokens;
+    
+    if(strcmp(command->tokens[(command->count_tokens) - 1], "&") == 0)
+    {
+        command->is_background = 1;
+        command->count_tokens--;
+    }
+    else 
+        command->is_background = 0;
+
+    return;
 }
 
-int exec_chik(char** command_tokens)
+void exec_chik(struct process* command)
 {
    for (int i = 0; i < CMD_COUNT; i++)
    {
-    if (strncmp(chik_cmd[i], command_tokens[0], strlen(command_tokens[0])) == 0)
+    if (strncmp(chik_cmd[i], command->tokens[0], strlen(command->tokens[0])) == 0)
         {
-           (*chik_func[i])(command_tokens);
-           return 0;
+           (*chik_func[i])(command);
+           return;
         }
    }
-    run_program(command_tokens);
-    return 0;
+    run_program(command);
+    return;
 }
 
-int run_program(char** commands_token)
+void run_program(struct process* command)
 {
-    pid_t pid; //
     pid_t wpid;
 
-    switch(pid = fork())
+    command->pid = fork();
+
+    switch(command->pid)
     {
-    case -1:    //ошибка
+    case ERR_CODE:    //ошибка
         perror("fork:");
-        return ERR_CODE;
+        return;
+
     case 0:     //код потомка
-        if (execvp(commands_token[0], commands_token) == -1)
+        if (execvp(command->tokens[0], command->tokens) == -1)
         {
             perror("execvp");
+            kill(getppid(), SIGINT);
+            exit(0);
         }
+        break;
+
     default:    //код родительского процееса
+        if (command->is_background)
+        {
+            printf("Запущен фоновой процесс\n");
+            break;
+        }
         sig.sa_handler = &kill_child;
         sigaction(SIGINT, &sig, NULL);
 
-        wpid = waitpid(pid, NULL, 0);
+        wpid = waitpid(command->pid, NULL, 0);
 
         sig.sa_handler = &kill_parent;
         sigaction(SIGINT, &sig, NULL);
         
         if(errno != 0 && errno != EINTR)
-        {
             perror("waitpid");
-        }
     }
-    return 0;
+
+    return;
 }
 
-int chik_cd(char** command_tokens)
+
+void chik_cd(struct process* command)
 {
-    printf("Выполняется cd\n");
-    return 0;
+    if (chdir(command->tokens[1]) == ERR_CODE)
+        perror("cd");
+
+    return;
 }
 
-int chik_help(char** command_tokens)
+void chik_help(struct process* command)
 {
-    printf("Выполняется help\n");
-    return 0;
+    printf("Встроенные команды в терминальчик:\n");
+    printf("\t" BRIGHT "cd <путь>" DEFAULT " - переход в директорию\n");
+    printf("\t" BRIGHT "help" DEFAULT " - маленькая подсказка о встроенных командах\n");
+    printf("\t" BRIGHT "exit" DEFAULT " - выход из терминальчика\n");
+    
+    return;
 }
 
-int chik_exit(char** command_tokens)
+void chik_exit(struct process* command)
 {
     printf("Выполняется exit\n");
     exit(0);
-    return 0;
 }
 
 void kill_child(int signum)
 {
-    printf("\nПринудительное завершение процесса потомка\n");
     sig.sa_handler = &kill_parent;
+    printf("\nПринудительное завершение процесса потомка\n");
 } 
 
 void kill_parent(int signum)
